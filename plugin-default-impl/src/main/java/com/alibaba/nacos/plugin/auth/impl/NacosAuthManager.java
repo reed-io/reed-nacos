@@ -16,7 +16,9 @@
 
 package com.alibaba.nacos.plugin.auth.impl;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.nacos.api.common.Constants;
+import com.alibaba.nacos.core.reed.ReedService;
 import com.alibaba.nacos.plugin.auth.impl.users.NacosUserV1;
 import com.alibaba.nacos.plugin.auth.impl.users.User;
 import com.alibaba.nacos.common.utils.StringUtils;
@@ -28,6 +30,7 @@ import com.alibaba.nacos.plugin.auth.impl.constant.AuthConstants;
 import com.alibaba.nacos.plugin.auth.impl.persistence.RoleInfo;
 import com.alibaba.nacos.plugin.auth.impl.roles.NacosRoleServiceImpl;
 import com.alibaba.nacos.plugin.auth.impl.users.NacosUser;
+import com.alibaba.nacos.plugin.auth.impl.utils.ReedHttpUtils;
 import io.jsonwebtoken.ExpiredJwtException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +45,9 @@ import org.springframework.stereotype.Component;
 import javax.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Builtin access control entry of Nacos.
@@ -53,9 +58,11 @@ import java.util.List;
 @Component
 public class NacosAuthManager {
 
-    private final String ROOT_ADMIN_USERNAME = "root_admin";
+    private static final String ROOT_ADMIN_USERNAME = "root_admin";
 
-    private final String ROOT_ADMIN_PASSWORD = "root_admin";
+    private static final String ROOT_ADMIN_PASSWORD = "root_admin";
+
+    private static final String ADMIN_TOKEN = "c258779a6fe134a2d6d22859e547a20b43263a52";
     
     @Autowired
     private JwtTokenManager tokenManager;
@@ -91,17 +98,24 @@ public class NacosAuthManager {
             byte[] encode = encoder.encode(("admin_user_token" + System.currentTimeMillis()).getBytes(StandardCharsets.UTF_8));
             user.setGlobalAdmin(true);
             user.setUserName("admin");
-//            user.setToken(new String(encode));
-            user.setToken(username);
+            user.setToken(ADMIN_TOKEN);
             user.setTtl(9999999999999999L);
             return user;
         }
+        //获取token
+        Map<String, Object> tokenMap = ReedService.loginGetToken(username, password);
+        String userToken = String.valueOf(tokenMap.get("userToken"));
+        long ttl = Long.parseLong(String.valueOf(tokenMap.get("expire")));
+        Long userId = ReedService.getUserId(userToken);
+        String name = ReedService.getUsername(userId);
         user.setGlobalAdmin(false);
-        user.setUserName(username);
-        user.setToken(username);
-        user.setTtl(999999999L);
+        user.setUserName(name);
+        user.setToken(userToken);
+        user.setTtl(ttl);
         return user;
     }
+
+
 
     
     User login(IdentityContext identityContext) throws AccessException {

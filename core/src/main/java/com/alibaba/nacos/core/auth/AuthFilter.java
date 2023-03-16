@@ -22,6 +22,7 @@ import com.alibaba.nacos.auth.config.AuthConfigs;
 import com.alibaba.nacos.common.utils.ExceptionUtil;
 import com.alibaba.nacos.common.utils.StringUtils;
 import com.alibaba.nacos.core.code.ControllerMethodsCache;
+import com.alibaba.nacos.core.reed.ReedService;
 import com.alibaba.nacos.core.utils.Loggers;
 import com.alibaba.nacos.plugin.auth.api.IdentityContext;
 import com.alibaba.nacos.plugin.auth.api.Permission;
@@ -46,17 +47,16 @@ import java.lang.reflect.Method;
  */
 public class AuthFilter implements Filter {
 
+    private static final String ADMIN_TOKEN = "c258779a6fe134a2d6d22859e547a20b43263a52";
+
     private final Logger logger = LoggerFactory.getLogger(AuthFilter.class);
-    
-    private final AuthConfigs authConfigs;
-    
+
     private final ControllerMethodsCache methodsCache;
     
     private final HttpProtocolAuthService protocolAuthService;
 
     
     public AuthFilter(AuthConfigs authConfigs, ControllerMethodsCache methodsCache) {
-        this.authConfigs = authConfigs;
         this.methodsCache = methodsCache;
         this.protocolAuthService = new HttpProtocolAuthService(authConfigs);
         this.protocolAuthService.initialize();
@@ -85,10 +85,24 @@ public class AuthFilter implements Filter {
                     accessToken = req.getParameter("accessToken");
                 }
                 if (StringUtils.isBlank(accessToken)) {
+                    accessToken = req.getHeader("user_token");
+                }
+                if (StringUtils.isBlank(accessToken)) {
+                    accessToken = req.getHeader("reed_user_token");
+                }
+                if (StringUtils.isBlank(accessToken)) {
                     throw new AccessException("Validate Authority failed.");
                 }
-                //TODO 校验token
-
+                boolean isAdmin = ADMIN_TOKEN.equals(accessToken);
+                String loginName = "root_admin";
+                //admin忽略token
+                if (!isAdmin) {
+                    Long userId = ReedService.getUserId(accessToken);
+                    if (userId == null) {
+                        throw new AccessException("Validate Authority failed.");
+                    }
+                    loginName = ReedService.getLoginName(userId);
+                }
 
                 Secured secured = method.getAnnotation(Secured.class);
 
@@ -99,11 +113,11 @@ public class AuthFilter implements Filter {
                 logger.info("action => " + action);
                 Permission permission = new Permission(resource, action);
                 logger.info("permission => " + permission);
-                boolean result = protocolAuthService.validateAuthority(accessToken, permission);
-//                if (!result) {
-//                    // TODO Get reason of failure
-//                    throw new AccessException("Validate Authority failed.");
-//                }
+                boolean result = protocolAuthService.validateAuthority(loginName, permission);
+                if (!result) {
+                    // TODO Get reason of failure
+                    throw new AccessException("Validate Authority failed.");
+                }
 
             }
             chain.doFilter(request, response);
